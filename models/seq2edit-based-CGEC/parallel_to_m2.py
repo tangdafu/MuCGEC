@@ -44,67 +44,13 @@ def annotate(line,args):
             raise Exception
     return output_str
 
-def main(args):
-    tokenizer = Tokenizer(args.granularity, args.device, args.segmented)
-    global annotator, sentence_to_tokenized
-    annotator = Annotator.create_default(args.granularity, args.multi_cheapest_strategy)
-    lines = open(args.file, "r", encoding="utf-8").read().strip().split("\n")  # format: id src tgt1 tgt2...
-    # error_types = []
 
-    with open(args.output, "w", encoding="utf-8") as f:
-        count = 0
-        sentence_set = set()
-        sentence_to_tokenized = {}
-        for line in lines:
-            sent_list = line.split("\t")[1:]
-            for idx, sent in enumerate(sent_list):
-                if args.segmented:
-                    # print(sent)
-                    sent = sent.strip()
-                else:
-                    sent = "".join(sent.split()).strip()
-                if idx >= 1:
-                    if not args.no_simplified:
-                        sentence_set.add(cc.convert(sent))
-                    else:
-                        sentence_set.add(sent)
-                else:
-                    sentence_set.add(sent)
-        batch = []
-        for sent in tqdm(sentence_set):
-            count += 1
-            if sent:
-                batch.append(sent)
-            if count % args.batch_size == 0:
-                results = tokenizer(batch)
-                for s, r in zip(batch, results):
-                    sentence_to_tokenized[s] = r  # Get tokenization map.
-                batch = []
-        if batch:
-            results = tokenizer(batch)
-            for s, r in zip(batch, results):
-                sentence_to_tokenized[s] = r  # Get tokenization map.
-    
-        # 单进程模式
-        for line in tqdm(lines):
-            ret = annotate(line)
-            f.write(ret)
-            f.write("\n") 
-
-        # 多进程模式：仅在Linux环境下测试，建议在linux服务器上使用
-        # with Pool(args.worker_num) as pool:
-        #     for ret in pool.imap(annotate, tqdm(lines), chunksize=8):
-        #         if ret:
-        #             f.write(ret)
-        #             f.write("\n")
-
-
-def main2(args):
+def main2(args,file):
     tokenizer = Tokenizer(args.granularity, args.device, args.segmented)
     global annotator, sentence_to_tokenized
     annotator = Annotator.create_default(args.granularity, args.multi_cheapest_strategy)
     lines = []
-    for item in args.file:
+    for item in file:
         lines.append(item.strip())
 
     count = 0

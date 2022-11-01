@@ -1,0 +1,7 @@
+.idea
+*.th
+*.char
+*.input
+*.output
+*.bin
+result.json
