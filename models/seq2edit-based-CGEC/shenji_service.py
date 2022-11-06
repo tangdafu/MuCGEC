@@ -10,7 +10,10 @@ import parallel_to_m2
 from opencc import OpenCC
 import compare_m2_for_evaluation
 import pandas as pd
+import re
+from opencc import OpenCC
 
+cc = OpenCC("t2s")
 
 cc = OpenCC("t2s")
 class Corrector_Service(object):
@@ -22,6 +25,8 @@ class Corrector_Service(object):
             'W': '乱序',
             'noop': '无错误'
         }
+        # 是否分段
+        self.seg = True
         self.url = 'http://jkgpu.cshuaju.top:8082/corrector'
         self.token = '31b2acb73d49fe3656ef07b1e977a344'
         self.word_dict = self.load_dict()
@@ -53,7 +58,7 @@ class Corrector_Service(object):
     def load_args2(self):
         parser2 = argparse.ArgumentParser(description="Choose input file to annotate")
         parser2.add_argument("-b", "--batch_size", type=int, help="The size of batch", default=128)
-        parser2.add_argument("-d", "--device", type=int, help="The ID of GPU", default=-1)
+        parser2.add_argument("-d", "--device", type=int, help="The ID of GPU", default=0)
         parser2.add_argument("-w", "--worker_num", type=int, help="The number of workers", default=16)
         parser2.add_argument("-g", "--granularity", type=str, help="Choose char-level or word-level evaluation",
                              default="char")
@@ -130,20 +135,77 @@ class Corrector_Service(object):
             })
         return output
 
+    def split_sentence(self,document: str, flag: str = "all", limit: int = 510):
+        """
+        Args:
+            document:
+            flag: Type:str, "all" 中英文标点分句，"zh" 中文标点分句，"en" 英文标点分句
+            limit: 默认单句最大长度为510个字符
+        Returns: Type:list
+        """
+        sent_list = []
+        try:
+            if flag == "zh":
+                document = re.sub('(?P<quotation_mark>([。？！](?![”’"\'])))', r'\g<quotation_mark>\n', document)  # 单字符断句符
+                document = re.sub('(?P<quotation_mark>([。？！])[”’"\'])', r'\g<quotation_mark>\n', document)  # 特殊引号
+            elif flag == "en":
+                document = re.sub('(?P<quotation_mark>([.?!](?![”’"\'])))', r'\g<quotation_mark>\n',
+                                  document)  # 英文单字符断句符
+                document = re.sub('(?P<quotation_mark>([?!.]["\']))', r'\g<quotation_mark>\n', document)  # 特殊引号
+            else:
+                document = re.sub('(?P<quotation_mark>([。？！….?!](?![”’"\'])))', r'\g<quotation_mark>\n',
+                                  document)  # 单字符断句符
+                document = re.sub('(?P<quotation_mark>(([。？！.!?]|…{1,2})[”’"\']))', r'\g<quotation_mark>\n',
+                                  document)  # 特殊引号
+
+            sent_list_ori = document.splitlines()
+            for sent in sent_list_ori:
+                sent = sent.strip()
+                if not sent:
+                    continue
+                else:
+                    while len(sent) > limit:
+                        temp = sent[0:limit]
+                        sent_list.append(temp)
+                        sent = sent[limit:]
+                    sent_list.append(sent)
+        except:
+            sent_list.clear()
+            sent_list.append(document)
+        return sent_list
     def predict(self, input_texts):
         result_path = self._get_result_save_path()
 
-        dict_inputs = [self.predict_dict(line) for line in input_texts]        
+        # 截断
+        subsents = []
+        s_map = []
+        for i, sent in enumerate(input_texts):  # 将篇章划分为子句，分句预测再合并
+            if self.seg:
+                subsent_list = self.split_sentence(sent, flag="zh")
+            else:
+                subsent_list = [sent]
+            s_map.extend([i for _ in range(len(subsent_list))])
+            subsents.extend(subsent_list)
+        assert len(subsents) == len(s_map)
 
-        results = self.seq2Edit_Model.predict_for_http(dict_inputs)
+        dict_inputs = [self.predict_dict(line) for line in subsents]
+
+        predictions = self.seq2Edit_Model.predict_for_http(dict_inputs)
 
         try:
-            resp = self.request_csc_web(results)
-            results = []
+            resp = self.request_csc_web(predictions)
+            predictions = []
             for item in resp:
-                results.append(item['cor_text'])
+                predictions.append(item['cor_text'])
         except Exception as e:
             pass
+
+        results = ["" for _ in range(len(input_texts))]
+        for i, ret in enumerate(predictions):
+            ret_new = [tok.lstrip("##") for tok in ret]
+            ret = cc.convert("".join(ret_new))
+            results[s_map[i]] += cc.convert(ret)
+
 
         # print(results)
         op_results = self.get_para_data(input_texts,results)

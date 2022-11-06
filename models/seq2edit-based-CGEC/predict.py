@@ -77,7 +77,7 @@ class seq2Edit:
                             default=None)  # 不同模型的权重（加权集成）
         parser.add_argument('--cuda_device',
                             help='The number of GPU',
-                            default=-1)  # 使用GPU编号
+                            default=0)  # 使用GPU编号
         parser.add_argument('--log',
                             action='store_true')  # 是否输出完整信息
         parser.add_argument('--seg',
@@ -90,44 +90,7 @@ class seq2Edit:
         args = parser.parse_args()
         return args
 
-    def split_sentence(self,document: str, flag: str = "all", limit: int = 510):
-        """
-        Args:
-            document:
-            flag: Type:str, "all" 中英文标点分句，"zh" 中文标点分句，"en" 英文标点分句
-            limit: 默认单句最大长度为510个字符
-        Returns: Type:list
-        """
-        sent_list = []
-        try:
-            if flag == "zh":
-                document = re.sub('(?P<quotation_mark>([。？！](?![”’"\'])))', r'\g<quotation_mark>\n', document)  # 单字符断句符
-                document = re.sub('(?P<quotation_mark>([。？！])[”’"\'])', r'\g<quotation_mark>\n', document)  # 特殊引号
-            elif flag == "en":
-                document = re.sub('(?P<quotation_mark>([.?!](?![”’"\'])))', r'\g<quotation_mark>\n',
-                                  document)  # 英文单字符断句符
-                document = re.sub('(?P<quotation_mark>([?!.]["\']))', r'\g<quotation_mark>\n', document)  # 特殊引号
-            else:
-                document = re.sub('(?P<quotation_mark>([。？！….?!](?![”’"\'])))', r'\g<quotation_mark>\n',
-                                  document)  # 单字符断句符
-                document = re.sub('(?P<quotation_mark>(([。？！.!?]|…{1,2})[”’"\']))', r'\g<quotation_mark>\n',
-                                  document)  # 特殊引号
 
-            sent_list_ori = document.splitlines()
-            for sent in sent_list_ori:
-                sent = sent.strip()
-                if not sent:
-                    continue
-                else:
-                    while len(sent) > limit:
-                        temp = sent[0:limit]
-                        sent_list.append(temp)
-                        sent = sent[limit:]
-                    sent_list.append(sent)
-        except:
-            sent_list.clear()
-            sent_list.append(document)
-        return sent_list
 
     def deal_input(self,input_list):
         input = []
@@ -137,25 +100,16 @@ class seq2Edit:
             input.append(" ".join(tokens))
         return input
 
-    def predict_for_http(self,input_list, log=True, seg=False):
+    def predict_for_http(self,input_list, log=True, seg=True):
 
         input_list = self.deal_input(input_list)
 
         sents = [s.strip() for s in input_list]
-        subsents = []
-        s_map = []
-        for i, sent in enumerate(sents):  # 将篇章划分为子句，分句预测再合并
-            if seg:
-                subsent_list = self.split_sentence(sent, flag="zh")
-            else:
-                subsent_list = [sent]
-            s_map.extend([i for _ in range(len(subsent_list))])
-            subsents.extend(subsent_list)
-        assert len(subsents) == len(s_map)
+
         predictions = []
         cnt_corrections = 0
         batch = []
-        for sent in subsents:
+        for sent in sents:
             batch.append(sent.split())
             if len(batch) == self.args.batch_size:  # 如果数据够了一个batch的话，
                 preds, cnt = self.model.handle_batch(batch)
@@ -170,42 +124,16 @@ class seq2Edit:
             predictions.extend(preds)
             cnt_corrections += cnt
 
-        assert len(subsents) == len(predictions)
+        assert len(sents) == len(predictions)
 
-        results = ["" for _ in range(len(sents))]
+        results = []
         for i, ret in enumerate(predictions):
             ret_new = [tok.lstrip("##") for tok in ret]
             ret = cc.convert("".join(ret_new))
-            results[s_map[i]] += cc.convert(ret)
+            results.append(cc.convert(ret))
 
         return results
 
-
-
-
-
-
-
-# def main(args):
-#     # get all paths
-#     model = GecBERTModel(vocab_path=args.vocab_path,
-#                          model_paths=args.model_path.split(','),
-#                          weights_names=args.weights_name.split(','),
-#                          max_len=args.max_len, min_len=args.min_len,
-#                          iterations=args.iteration_count,
-#                          min_error_probability=args.min_error_probability,
-#                          min_probability=args.min_error_probability,
-#                          log=False,
-#                          confidence=args.additional_confidence,
-#                          is_ensemble=args.is_ensemble,
-#                          weigths=args.weights,
-#                          cuda_device=args.cuda_device
-#                          )
-#     # cnt_corrections = predict_for_file(args.input_file, args.output_file, model, batch_size=args.batch_size,
-#     #                                     log=args.log, seg=args.seg)
-#     results = predict_for_http(args.input_file, model, batch_size=args.batch_size,
-#                                        log=args.log, seg=args.seg)
-#     return results
 
 
 
