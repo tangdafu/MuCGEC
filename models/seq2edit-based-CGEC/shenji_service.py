@@ -58,7 +58,7 @@ class Corrector_Service(object):
     def load_args2(self):
         parser2 = argparse.ArgumentParser(description="Choose input file to annotate")
         parser2.add_argument("-b", "--batch_size", type=int, help="The size of batch", default=128)
-        parser2.add_argument("-d", "--device", type=int, help="The ID of GPU", default=0)
+        parser2.add_argument("-d", "--device", type=int, help="The ID of GPU", default=-1)
         parser2.add_argument("-w", "--worker_num", type=int, help="The number of workers", default=16)
         parser2.add_argument("-g", "--granularity", type=str, help="Choose char-level or word-level evaluation",
                              default="char")
@@ -176,15 +176,28 @@ class Corrector_Service(object):
     def predict(self, input_texts):
         result_path = self._get_result_save_path()
 
+        sents = [s.strip() for s in input_texts]
+
+        input_texts = sents
+
+
         # 截断
         subsents = []
         s_map = []
+        len_map = []
         for i, sent in enumerate(input_texts):  # 将篇章划分为子句，分句预测再合并
             if self.seg:
                 subsent_list = self.split_sentence(sent, flag="zh")
             else:
                 subsent_list = [sent]
             s_map.extend([i for _ in range(len(subsent_list))])
+            total = 0;
+            for j in range(len(subsent_list)):
+                if j == 0:
+                    len_map.append(0)
+                else:
+                    len_map.append(total)
+                total += len(subsent_list[j])
             subsents.extend(subsent_list)
         assert len(subsents) == len(s_map)
 
@@ -200,21 +213,33 @@ class Corrector_Service(object):
         except Exception as e:
             pass
 
+
+
+
+        # print(results)
+        op_results = self.get_para_data(subsents,predictions)
+
+        opt = parallel_to_m2.main2(self.args2,op_results)
+
+        hpy_edit = compare_m2_for_evaluation.main(opt)
+        hpy_edit2 = [[] for _ in range(len(input_texts))]
         results = ["" for _ in range(len(input_texts))]
         for i, ret in enumerate(predictions):
             ret_new = [tok.lstrip("##") for tok in ret]
             ret = cc.convert("".join(ret_new))
             results[s_map[i]] += cc.convert(ret)
+            temp = []
+            for item in hpy_edit[i]:
+                if item[2] == 'noop':
+                    continue
+                item[0] += len_map[i]
+                item[1] += len_map[i]
+                temp.append(item)
+            # if len(temp) == 0:
+            #     temp.append([-1,-1,'noop','-NONE',0])
+            hpy_edit2[s_map[i]].extend(temp)
 
-
-        # print(results)
-        op_results = self.get_para_data(input_texts,results)
-
-        opt = parallel_to_m2.main2(self.args2,op_results)
-
-        hpy_edit = compare_m2_for_evaluation.main(opt)
-
-        output = self.deal_Json_results(input_texts,results,hpy_edit)
+        output = self.deal_Json_results(input_texts,results,hpy_edit2)
 
         self._write_result_line(output, result_path)
 

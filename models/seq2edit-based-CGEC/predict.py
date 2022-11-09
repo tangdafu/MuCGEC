@@ -77,7 +77,7 @@ class seq2Edit:
                             default=None)  # 不同模型的权重（加权集成）
         parser.add_argument('--cuda_device',
                             help='The number of GPU',
-                            default=0)  # 使用GPU编号
+                            default=-1)  # 使用GPU编号
         parser.add_argument('--log',
                             action='store_true')  # 是否输出完整信息
         parser.add_argument('--seg',
