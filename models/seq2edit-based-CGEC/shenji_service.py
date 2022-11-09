@@ -235,10 +235,10 @@ class Corrector_Service(object):
                 item[0] += len_map[i]
                 item[1] += len_map[i]
                 temp.append(item)
-            # if len(temp) == 0:
-            #     temp.append([-1,-1,'noop','-NONE',0])
             hpy_edit2[s_map[i]].extend(temp)
-
+        for i in range(len(hpy_edit2)):
+            if len(hpy_edit2[i]) == 0:
+                hpy_edit2[i].append([-1,-1,'noop','-NONE',0])
         output = self.deal_Json_results(input_texts,results,hpy_edit2)
 
         self._write_result_line(output, result_path)
